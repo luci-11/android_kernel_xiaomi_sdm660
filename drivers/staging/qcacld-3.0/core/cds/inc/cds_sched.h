@@ -85,9 +85,9 @@
 ** OL Rx thread.
 */
 #define CDS_MAX_OL_RX_PKT 4000
+#endif
 
 typedef void (*cds_ol_rx_thread_cb)(void *context, void *rxpkt, uint16_t staid);
-#endif
 
 /*
 ** QDF Message queue definition.
@@ -101,7 +101,6 @@ typedef struct _cds_mq_type {
 
 } cds_mq_type, *p_cds_mq_type;
 
-#ifdef QCA_CONFIG_SMP
 /*
 ** CDS message wrapper for data rx from TXRX
 */
@@ -119,7 +118,6 @@ struct cds_ol_rx_pkt {
 	cds_ol_rx_thread_cb callback;
 
 };
-#endif
 
 /*
 ** CDS Scheduler context
@@ -269,9 +267,9 @@ typedef struct _cds_context_type {
 	qdf_event_t ProbeEvent;
 
 	uint32_t driver_state;
+	unsigned long fw_state;
 
 	qdf_event_t wmaCompleteEvent;
-	unsigned long fw_state;
 
 	/* WMA Context */
 	void *pWMAContext;
@@ -320,6 +318,7 @@ typedef struct _cds_context_type {
 	void (*hdd_en_lro_in_cc_cb)(struct hdd_context_s *);
 	void (*hdd_disable_lro_in_cc_cb)(struct hdd_context_s *);
 	void (*hdd_set_rx_mode_rps_cb)(struct hdd_context_s *, void *, bool);
+	void (*hdd_ipa_set_mcc_mode_cb)(bool);
 
 	/* This list is not sessionized. This mandatory channel list would be
 	 * as per OEMs preference as per the regulatory/other considerations.
@@ -334,11 +333,13 @@ typedef struct _cds_context_type {
 
 	/* This is to track if HW mode change is in progress */
 	uint32_t hw_mode_change_in_progress;
+	uint16_t unsafe_channel_count;
+	uint16_t unsafe_channel_list[NUM_CHANNELS];
+	/* current system preference */
+	uint8_t cur_conc_system_pref;
 	qdf_work_t cds_recovery_work;
 	qdf_workqueue_t *cds_recovery_wq;
 	enum cds_hang_reason recovery_reason;
-	uint16_t unsafe_channel_count;
-	uint16_t unsafe_channel_list[NUM_CHANNELS];
 } cds_context_type, *p_cds_contextType;
 
 extern struct _cds_sched_context *gp_cds_sched_context;
@@ -447,6 +448,7 @@ void cds_indicate_rxpkt(p_cds_sched_context pSchedContext,
 static inline
 struct cds_ol_rx_pkt *cds_alloc_ol_rx_pkt(p_cds_sched_context pSchedContext)
 {
+	return NULL;
 }
 
 /**

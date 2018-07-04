@@ -72,10 +72,29 @@ QDF_STATUS hdd_get_peer_sta_id(hdd_station_ctx_t *sta_ctx,
 
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 void hdd_tx_resume_cb(void *adapter_context, bool tx_resume);
+
+/**
+ * hdd_tx_flow_control_is_pause() - Is TX Q paused by flow control
+ * @adapter_context: pointer to vdev apdapter
+ *
+ * Return: true if TX Q is paused by flow control
+ */
+bool hdd_tx_flow_control_is_pause(void *adapter_context);
 void hdd_tx_resume_timer_expired_handler(void *adapter_context);
+
+/**
+ * hdd_register_tx_flow_control() - Register TX Flow control
+ * @adapter: adapter handle
+ * @timer_callback: timer callback
+ * @flow_control_fp: txrx flow control
+ * @flow_control_is_pause_fp: is txrx paused by flow control
+ *
+ * Return: none
+ */
 void hdd_register_tx_flow_control(hdd_adapter_t *adapter,
 		qdf_mc_timer_callback_t timer_callback,
-		ol_txrx_tx_flow_control_fp flowControl);
+		ol_txrx_tx_flow_control_fp flowControl,
+		ol_txrx_tx_flow_control_is_pause_fp flow_control_is_pause);
 void hdd_deregister_tx_flow_control(hdd_adapter_t *adapter);
 void hdd_get_tx_resource(hdd_adapter_t *adapter,
 			uint8_t STAId, uint16_t timer_value);
@@ -83,26 +102,26 @@ void hdd_get_tx_resource(hdd_adapter_t *adapter,
 #else
 static inline void hdd_tx_resume_cb(void *adapter_context, bool tx_resume)
 {
-	return;
+}
+static inline bool hdd_tx_flow_control_is_pause(void *adapter_context)
+{
+	return false;
 }
 static inline void hdd_tx_resume_timer_expired_handler(void *adapter_context)
 {
-	return;
 }
 static inline void hdd_register_tx_flow_control(hdd_adapter_t *adapter,
 		qdf_mc_timer_callback_t timer_callback,
-		ol_txrx_tx_flow_control_fp flowControl)
+		ol_txrx_tx_flow_control_fp flowControl,
+		ol_txrx_tx_flow_control_is_pause_fp flow_control_is_pause)
 {
-	return;
 }
 static inline void hdd_deregister_tx_flow_control(hdd_adapter_t *adapter)
 {
-	return;
 }
 static inline void hdd_get_tx_resource(hdd_adapter_t *adapter,
 			uint8_t STAId, uint16_t timer_value)
 {
-	return;
 }
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
 
@@ -163,5 +182,23 @@ hdd_skb_fill_gso_size (struct net_device *dev,
 				+ tcp_hdrlen(skb));
 	}
 }
+
+#ifdef CONFIG_HL_SUPPORT
+static inline QDF_STATUS
+hdd_skb_nontso_linearize(struct sk_buff *skb)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static inline QDF_STATUS
+hdd_skb_nontso_linearize(struct sk_buff *skb)
+{
+	if (qdf_nbuf_is_nonlinear(skb) && qdf_nbuf_is_tso(skb) == false) {
+		if (qdf_unlikely(skb_linearize(skb)))
+			return QDF_STATUS_E_NOMEM;
+	}
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 
 #endif /* end #if !defined(WLAN_HDD_TX_RX_H) */

@@ -69,10 +69,10 @@ uint32_t limComputeAvg(tpAniSirGlobal, uint32_t, uint32_t);
  * Return: true if the vendor OUI is present, else false
  */
 bool lim_check_vendor_ap_present(tpAniSirGlobal mac_ctx,
-		tSirProbeRespBeacon *beacon_struct,
-		tpPESession session,
-		uint8_t *ie, uint16_t ie_len,
-		enum wmi_action_oui_id id);
+				 tSirProbeRespBeacon *beacon_struct,
+				 tpPESession session,
+				 uint8_t *ie, uint16_t ie_len,
+				 enum wmi_action_oui_id id);
 
 /* / Function to extract AP's HCF capability from IE fields */
 void lim_extract_ap_capability(tpAniSirGlobal, uint8_t *, uint16_t, uint8_t *,

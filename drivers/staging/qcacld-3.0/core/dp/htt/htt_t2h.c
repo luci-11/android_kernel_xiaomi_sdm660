@@ -73,14 +73,13 @@
 static inline
 void htt_rx_frag_set_last_msdu(struct htt_pdev_t *pdev, qdf_nbuf_t msg)
 {
-	return;
 }
 #else
 
 static void htt_rx_frag_set_last_msdu(struct htt_pdev_t *pdev, qdf_nbuf_t msg)
 {
 	uint32_t *msg_word;
-	unsigned num_msdu_bytes;
+	unsigned int num_msdu_bytes;
 	qdf_nbuf_t msdu;
 	struct htt_host_rx_desc_base *rx_desc;
 	int start_idx;
@@ -152,8 +151,6 @@ static uint8_t *htt_t2h_mac_addr_deswizzle(uint8_t *tgt_mac_addr,
 #endif
 }
 
-#define MAX_TARGET_TX_CREDIT    204800
-
 /* Target to host Msg/event  handler  for low priority messages*/
 static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 				   bool free_msg_buf)
@@ -170,20 +167,22 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 		htc_pm_runtime_put(pdev->htc_pdev);
 		pdev->tgt_ver.major = HTT_VER_CONF_MAJOR_GET(*msg_word);
 		pdev->tgt_ver.minor = HTT_VER_CONF_MINOR_GET(*msg_word);
-		qdf_print
-			("target uses HTT version %d.%d; host uses %d.%d",
+		QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_INFO,
+			"target uses HTT version %d.%d; host uses %d.%d",
 			pdev->tgt_ver.major, pdev->tgt_ver.minor,
 			HTT_CURRENT_VERSION_MAJOR,
 			HTT_CURRENT_VERSION_MINOR);
 		if (pdev->tgt_ver.major != HTT_CURRENT_VERSION_MAJOR)
-			qdf_print
-			      ("*** Incompatible host/target HTT versions!");
+			QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_WARN,
+			      "*** Incompatible host/target HTT versions!");
 		/* abort if the target is incompatible with the host */
 		qdf_assert(pdev->tgt_ver.major ==
 			   HTT_CURRENT_VERSION_MAJOR);
 		if (pdev->tgt_ver.minor != HTT_CURRENT_VERSION_MINOR) {
-			qdf_print("*** Warning: host/target HTT versions are ");
-			qdf_print(" different, though compatible!");
+			QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_WARN,
+				"*** Warning: host/target HTT versions are ");
+			QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_WARN,
+				" different, though compatible!");
 		}
 		break;
 	}
@@ -209,7 +208,7 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 	}
 	case HTT_T2H_MSG_TYPE_RX_OFFLOAD_DELIVER_IND:
 	{
-		uint16_t msdu_cnt;
+		int msdu_cnt;
 
 		msdu_cnt =
 			HTT_RX_OFFLOAD_DELIVER_IND_MSDU_CNT_GET(*msg_word);
@@ -222,9 +221,8 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 			 * htt_t2h_msg
 			 */
 			return;
-		} else {
-			break;
 		}
+		break;
 	}
 	case HTT_T2H_MSG_TYPE_RX_FRAG_IND:
 	{
@@ -249,9 +247,9 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 						__func__,
 						rx_pkt_len);
 				/*
-				* This buf will be freed before
-				* exiting this function.
-				*/
+				 * This buf will be freed before
+				 * exiting this function.
+				 */
 				break;
 			}
 		}
@@ -334,6 +332,7 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 	case HTT_T2H_MSG_TYPE_PEER_UNMAP:
 	{
 		uint16_t peer_id;
+
 		peer_id = HTT_RX_PEER_UNMAP_PEER_ID_GET(*msg_word);
 		if (peer_id > ol_cfg_max_peer_id(pdev->ctrl_pdev)) {
 			qdf_print("%s: HTT_T2H_MSG_TYPE_PEER_UNMAP,"
@@ -398,7 +397,8 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 			htc_pm_runtime_put(pdev->htc_pdev);
 			HTT_TX_SCHED(pdev);
 		} else {
-			qdf_print("Ignoring HTT_T2H_MSG_TYPE_MGMT_TX_COMPL_IND indication");
+			QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_INFO,
+				  "Ignoring HTT_T2H_MSG_TYPE_MGMT_TX_COMPL_IND indication");
 		}
 		break;
 	}
@@ -427,23 +427,12 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 	{
 		uint32_t htt_credit_delta_abs;
 		int32_t htt_credit_delta;
-		int sign, old_credit;
+		int sign;
 
 		htt_credit_delta_abs =
 			HTT_TX_CREDIT_DELTA_ABS_GET(*msg_word);
 		sign = HTT_TX_CREDIT_SIGN_BIT_GET(*msg_word) ? -1 : 1;
 		htt_credit_delta = sign * htt_credit_delta_abs;
-
-		old_credit = qdf_atomic_read(&pdev->htt_tx_credit.target_delta);
-		if (((old_credit + htt_credit_delta) > MAX_TARGET_TX_CREDIT) ||
-			((old_credit + htt_credit_delta) < -MAX_TARGET_TX_CREDIT)) {
-			qdf_print("%s: invalid credit update,old_credit=%d,"
-				"htt_credit_delta=%d\n",
-				__func__,
-				old_credit,
-				htt_credit_delta);
-			break;
-		}
 
 		if (pdev->cfg.is_high_latency &&
 		    !pdev->cfg.default_tx_comp_req) {
@@ -623,9 +612,10 @@ static void htt_t2h_rx_in_order_indication_handler(
 	frag_ind = HTT_RX_IN_ORD_PADDR_IND_FRAG_GET(msg_word);
 
 #if defined(HELIUMPLUS_DEBUG)
-	qdf_print("%s %d: peerid %d tid %d offloadind %d fragind %d\n",
-			__func__, __LINE__, peer_id, tid, offload_ind,
-			frag_ind);
+	QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_INFO,
+		  "%s %d: peerid %d tid %d offloadind %d fragind %d",
+		  __func__, __LINE__, peer_id, tid, offload_ind, frag_ind);
+
 #endif
 	if (qdf_unlikely(frag_ind)) {
 		ol_rx_frag_indication_handler(pdev,
@@ -643,10 +633,11 @@ static void htt_t2h_rx_in_order_indication_handler(
 #define HTT_TX_COMPL_HEAD_SZ			4
 #define HTT_TX_COMPL_BYTES_PER_MSDU_ID		2
 
-/* Generic Target to host Msg/event  handler  for low priority messages
-   Low priority message are handler in a different handler called from
-   this function . So that the most likely succes path like Rx and
-   Tx comp   has little code   foot print
+/**
+ * Generic Target to host Msg/event  handler  for low priority messages
+ * Low priority message are handler in a different handler called from
+ * this function . So that the most likely succes path like Rx and
+ * Tx comp   has little code   foot print
  */
 void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 {
@@ -656,8 +647,8 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	enum htt_t2h_msg_type msg_type;
 
 	/* check for successful message reception */
-	if (pkt->Status != A_OK) {
-		if (pkt->Status != A_ECANCELED)
+	if (pkt->Status != QDF_STATUS_SUCCESS) {
+		if (pkt->Status != QDF_STATUS_E_CANCELED)
 			pdev->stats.htc_err_cnt++;
 		qdf_nbuf_free(htt_t2h_msg);
 		return;
@@ -677,18 +668,18 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	msg_type = HTT_T2H_MSG_TYPE_GET(*msg_word);
 
 #if defined(HELIUMPLUS_DEBUG)
-	qdf_print("%s %d: msg_word 0x%x msg_type %d",
-		  __func__, __LINE__, *msg_word, msg_type);
+	QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_INFO,
+		  "%s %d: msg_word 0x%x msg_type %d", __func__, __LINE__,
+		  *msg_word, msg_type);
 #endif
 
 	switch (msg_type) {
 	case HTT_T2H_MSG_TYPE_RX_IND:
 	{
-		unsigned num_mpdu_ranges;
-		unsigned num_msdu_bytes;
+		unsigned int num_mpdu_ranges;
+		unsigned int num_msdu_bytes;
 		uint16_t peer_id;
 		uint8_t tid;
-		int msg_len = qdf_nbuf_len(htt_t2h_msg);
 
 		if (qdf_unlikely(pdev->cfg.is_full_reorder_offload)) {
 			qdf_print("HTT_T2H_MSG_TYPE_RX_IND not supported ");
@@ -701,10 +692,6 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 		if (tid >= OL_TXRX_NUM_EXT_TIDS) {
 			qdf_print("HTT_T2H_MSG_TYPE_RX_IND, invalid tid %d\n",
 				tid);
-			break;
-		}
-		if (msg_len < (2 + HTT_RX_PPDU_DESC_SIZE32 + 1) * sizeof(uint32_t)) {
-			qdf_print("HTT_T2H_MSG_TYPE_RX_IND, invalid msg_len\n");
 			break;
 		}
 		num_msdu_bytes =
@@ -722,12 +709,6 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 		num_mpdu_ranges =
 			HTT_RX_IND_NUM_MPDU_RANGES_GET(*(msg_word + 1));
 		pdev->rx_ind_msdu_byte_idx = 0;
-		if (qdf_unlikely(pdev->rx_mpdu_range_offset_words + (num_mpdu_ranges * 4) > msg_len)) {
-			qdf_print("HTT_T2H_MSG_TYPE_RX_IND, invalid mpdu_ranges %d\n",
-				num_mpdu_ranges);
-			WARN_ON(1);
-			break;
-		}
 
 		ol_rx_indication_handler(pdev->txrx_pdev,
 					 htt_t2h_msg, peer_id,
@@ -740,7 +721,6 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	}
 	case HTT_T2H_MSG_TYPE_TX_COMPL_IND:
 	{
-		int old_credit;
 		int num_msdus;
 		enum htt_tx_status status;
 		int msg_len = qdf_nbuf_len(htt_t2h_msg);
@@ -783,38 +763,27 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 		}
 
 		if (pdev->cfg.is_high_latency) {
-			old_credit = qdf_atomic_read(
-						&pdev->htt_tx_credit.target_delta);
-			if (((old_credit + num_msdus) > MAX_TARGET_TX_CREDIT) ||
-				((old_credit + num_msdus) < -MAX_TARGET_TX_CREDIT)) {
-				qdf_print("%s: invalid credit update,old_credit=%d,"
-					"num_msdus=%d\n",
-					__func__,
-					old_credit,
-					num_msdus);
-			} else {
-				if (!pdev->cfg.default_tx_comp_req) {
-					int credit_delta;
+			if (!pdev->cfg.default_tx_comp_req) {
+				int credit_delta;
 
-					qdf_atomic_add(num_msdus,
-						       &pdev->htt_tx_credit.
-							target_delta);
-					credit_delta = htt_tx_credit_update(pdev);
+				qdf_atomic_add(num_msdus,
+					       &pdev->htt_tx_credit.
+								target_delta);
+				credit_delta = htt_tx_credit_update(pdev);
 
-					if (credit_delta) {
-						ol_tx_target_credit_update(
-								pdev->txrx_pdev,
-								credit_delta);
-					}
-				} else {
-					ol_tx_target_credit_update(pdev->txrx_pdev,
-								   num_msdus);
+				if (credit_delta) {
+					ol_tx_target_credit_update(
+							pdev->txrx_pdev,
+							credit_delta);
 				}
+			} else {
+				ol_tx_target_credit_update(pdev->txrx_pdev,
+							   num_msdus);
 			}
 		}
 
 		ol_tx_completion_handler(pdev->txrx_pdev, num_msdus,
-					 status, msg_word + 1);
+					 status, msg_word);
 		HTT_TX_SCHED(pdev);
 		break;
 	}
@@ -929,7 +898,7 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 		qdf_mem_dma_sync_single_for_device(dev,			\
 					(QDF_NBUF_CB_PADDR(_buf)),	\
 					(skb_end_pointer(_buf) -	\
-					(_buf)->data) ,			\
+					(_buf)->data),			\
 					PCI_DMA_FROMDEVICE);		\
 	} while (0)
 
@@ -1053,7 +1022,7 @@ void htt_t2h_msg_handler_fast(void *context, qdf_nbuf_t *cmpl_msdus,
 				}
 			}
 			ol_tx_completion_handler(pdev->txrx_pdev, num_msdus,
-						 status, msg_word + 1);
+						 status, msg_word);
 
 			break;
 		}
@@ -1199,7 +1168,8 @@ int htt_rx_ind_flush(htt_pdev_handle pdev, qdf_nbuf_t rx_ind_msg)
 void
 htt_rx_ind_flush_seq_num_range(htt_pdev_handle pdev,
 			       qdf_nbuf_t rx_ind_msg,
-			       unsigned *seq_num_start, unsigned *seq_num_end)
+			       unsigned int *seq_num_start,
+			       unsigned int *seq_num_end)
 {
 	uint32_t *msg_word;
 
@@ -1220,7 +1190,8 @@ int htt_rx_ind_release(htt_pdev_handle pdev, qdf_nbuf_t rx_ind_msg)
 void
 htt_rx_ind_release_seq_num_range(htt_pdev_handle pdev,
 				 qdf_nbuf_t rx_ind_msg,
-				 unsigned *seq_num_start, unsigned *seq_num_end)
+				 unsigned int *seq_num_start,
+				 unsigned int *seq_num_end)
 {
 	uint32_t *msg_word;
 
@@ -1421,7 +1392,8 @@ htt_rx_ind_tsf32(htt_pdev_handle pdev, qdf_nbuf_t rx_ind_msg)
 }
 
 /**
- * htt_rx_ind_ext_tid() - Return the extended traffic ID provided in a rx indication message.
+ * htt_rx_ind_ext_tid() - Return the extended traffic ID provided in a rx
+ *			  indication message.
  * @pdev:       the HTT instance the rx data was received on
  * @rx_ind_msg: the netbuf containing the rx indication message
  *

@@ -66,6 +66,7 @@ static void *memdump_get_file_data(struct file *file)
 	void *hdd_ctx;
 
 	hdd_ctx = PDE_DATA(file_inode(file));
+
 	return hdd_ctx;
 }
 
@@ -116,20 +117,20 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 
 	hdd_ctx = memdump_get_file_data(file);
 
-	hdd_notice("Read req for size:%zu pos:%llu", count, *pos);
+	hdd_debug("Read req for size:%zu pos:%llu", count, *pos);
 	status = wlan_hdd_validate_context(hdd_ctx);
 	if (status != 0)
 		return -EINVAL;
 
 	mutex_lock(&hdd_ctx->memdump_lock);
 	if (*pos < 0) {
-		hdd_err("Invalid start offset for memdump read");
 		mutex_unlock(&hdd_ctx->memdump_lock);
+		hdd_err("Invalid start offset for memdump read");
 		return -EINVAL;
 	} else if (!count || (hdd_ctx->driver_dump_size &&
 				(*pos >= hdd_ctx->driver_dump_size))) {
 		mutex_unlock(&hdd_ctx->memdump_lock);
-		hdd_warn("No more data to copy");
+		hdd_debug("No more data to copy");
 		return 0;
 	} else if ((*pos == 0) || (hdd_ctx->driver_dump_mem == NULL)) {
 		/*
@@ -139,8 +140,8 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 			hdd_ctx->driver_dump_mem =
 				qdf_mem_malloc(DRIVER_MEM_DUMP_SIZE);
 			if (!hdd_ctx->driver_dump_mem) {
-				hdd_err("qdf_mem_malloc failed");
 				mutex_unlock(&hdd_ctx->memdump_lock);
+				hdd_err("qdf_mem_malloc failed");
 				return -ENOMEM;
 			}
 		}
@@ -157,7 +158,7 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 		if (qdf_status != QDF_STATUS_SUCCESS)
 			hdd_err("Error in dump driver information, status %d",
 				qdf_status);
-		hdd_notice("driver_dump_size: %d",
+		hdd_debug("driver_dump_size: %d",
 					hdd_ctx->driver_dump_size);
 	}
 
@@ -168,8 +169,8 @@ static ssize_t hdd_driver_memdump_read(struct file *file, char __user *buf,
 
 	if (copy_to_user(buf, hdd_ctx->driver_dump_mem + *pos,
 					no_of_bytes_read)) {
-		hdd_err("copy to user space failed");
 		mutex_unlock(&hdd_ctx->memdump_lock);
+		hdd_err("copy to user space failed");
 		return -EFAULT;
 	}
 
@@ -210,7 +211,7 @@ static int hdd_driver_memdump_procfs_init(hdd_context_t *hdd_ctx)
 {
 	proc_dir_driver = proc_mkdir(PROCFS_DRIVER_DUMP_DIR, NULL);
 	if (proc_dir_driver == NULL) {
-		pr_debug("Error: Could not initialize /proc/%s\n",
+		pr_debug("Could not initialize /proc/%s\n",
 			 PROCFS_DRIVER_DUMP_DIR);
 		return -ENOMEM;
 	}
@@ -220,7 +221,7 @@ static int hdd_driver_memdump_procfs_init(hdd_context_t *hdd_ctx)
 				     &driver_dump_fops, hdd_ctx);
 	if (proc_file_driver == NULL) {
 		remove_proc_entry(PROCFS_DRIVER_DUMP_NAME, proc_dir_driver);
-		pr_debug("Error: Could not initialize /proc/%s\n",
+		pr_debug("Could not initialize /proc/%s\n",
 			  PROCFS_DRIVER_DUMP_NAME);
 		return -ENOMEM;
 	}
