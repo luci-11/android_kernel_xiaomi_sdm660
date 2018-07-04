@@ -138,8 +138,9 @@ dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \
 
 dtb-$(CONFIG_ARCH_MSMHAMSTER) += msmhamster-rumi.dtb
 
-ifeq (1,1)
-dtb-$(CONFIG_ARCH_SDM660) += jason-sdm660.dtb
+ifeq ($(CONFIG_MACH_JASON),y)
+dtb-$(CONFIG_ARCH_SDM660) += \
+	jason-sdm660.dtb
 else
 dtb-$(CONFIG_ARCH_SDM660) += sdm660-sim.dtb \
 	sdm660-internal-codec-cdp.dtb \
