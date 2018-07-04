@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -132,23 +132,15 @@ static QDF_STATUS hif_send_internal(HIF_DEVICE_USB *hif_usb_device,
 	int usb_status;
 	int i;
 	struct hif_usb_send_context *send_context;
-	uint8_t frag_count;
-	uint32_t head_data_len, tmp_frag_count = 0;
+	int frag_count = 0, head_data_len, tmp_frag_count = 0;
 	unsigned char *data_ptr;
 
 	HIF_DBG("+%s pipe : %d, buf:0x%pK nbytes %u",
 		__func__, pipe_id, buf, nbytes);
 
 	frag_count = qdf_nbuf_get_num_frags(buf);
-	if (frag_count == 1) {
-		/*
-		 * | hif_usb_send_context | netbuf->data
-		 */
-		head_data_len = sizeof(struct hif_usb_send_context);
-	} else if ((frag_count - 1) <= QDF_NBUF_CB_TX_MAX_EXTRA_FRAGS) {
-		/*
-		 * means have extra fragment buf in skb
-		 * header data length should be total sending length substract
+	if (frag_count > 1) {	/* means have extra fragment buf in skb */
+		/* header data length should be total sending length substract
 		 * internal data length of netbuf
 		 * | hif_usb_send_context | fragments except internal buffer |
 		 * netbuf->data
@@ -156,16 +148,15 @@ static QDF_STATUS hif_send_internal(HIF_DEVICE_USB *hif_usb_device,
 		head_data_len = sizeof(struct hif_usb_send_context);
 		while (tmp_frag_count < (frag_count - 1)) {
 			head_data_len =
-				head_data_len + qdf_nbuf_get_frag_len(buf,
-						tmp_frag_count);
+			    head_data_len +
+			    qdf_nbuf_get_frag_len(buf, tmp_frag_count);
 			tmp_frag_count = tmp_frag_count + 1;
 		}
 	} else {
-		/* Extra fragments overflow */
-		HIF_ERROR("%s Extra fragments count overflow : %d\n",
-			  __func__, frag_count);
-		status = QDF_STATUS_E_RESOURCES;
-		goto err;
+		/*
+		 * | hif_usb_send_context | netbuf->data
+		 */
+		head_data_len = sizeof(struct hif_usb_send_context);
 	}
 
 	/* Check whether head room is enough to save extra head data */
@@ -200,6 +191,7 @@ static QDF_STATUS hif_send_internal(HIF_DEVICE_USB *hif_usb_device,
 	     i < (send_context->new_alloc ? frag_count : frag_count - 1); i++) {
 		int frag_len = qdf_nbuf_get_frag_len(buf, i);
 		unsigned char *frag_addr = qdf_nbuf_get_frag_vaddr(buf, i);
+
 		qdf_mem_copy(data_ptr, frag_addr, frag_len);
 		data_ptr += frag_len;
 	}
@@ -284,6 +276,7 @@ QDF_STATUS hif_send_head(struct hif_opaque_softc *scn, uint8_t pipe_id,
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	HIF_DEVICE_USB *device = HIF_GET_USB_DEVICE(scn);
+
 	HIF_TRACE("+%s", __func__);
 	status = hif_send_internal(device, pipe_id, NULL, wbuf, nbytes);
 	HIF_TRACE("-%s", __func__);
@@ -297,7 +290,8 @@ QDF_STATUS hif_send_head(struct hif_opaque_softc *scn, uint8_t pipe_id,
  *
  * Return: # of free resources in pipe_id
  */
-uint16_t hif_get_free_queue_number(struct hif_opaque_softc *scn, uint8_t pipe_id)
+uint16_t hif_get_free_queue_number(struct hif_opaque_softc *scn,
+				   uint8_t pipe_id)
 {
 	HIF_DEVICE_USB *device = HIF_GET_USB_DEVICE(scn);
 
@@ -330,6 +324,7 @@ void hif_post_init(struct hif_opaque_softc *scn, void *target,
 void hif_detach_htc(struct hif_opaque_softc *scn)
 {
 	HIF_DEVICE_USB *device = HIF_GET_USB_DEVICE(scn);
+
 	usb_hif_flush_all(device);
 	qdf_mem_zero(&device->htc_callbacks, sizeof(device->htc_callbacks));
 }
@@ -865,8 +860,8 @@ QDF_STATUS hif_diag_write_mem(struct hif_opaque_softc *scn,
 					   uint8_t *data, int nbytes)
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	HIF_TRACE("+%s", __func__);
 
+	HIF_TRACE("+%s", __func__);
 	if ((address & 0x3) || ((uintptr_t)data & 0x3))
 		return QDF_STATUS_E_IO;
 

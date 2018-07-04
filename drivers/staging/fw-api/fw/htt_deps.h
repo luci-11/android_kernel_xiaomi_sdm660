@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,32 +21,22 @@
  * under proprietary terms before Copyright ownership was assigned
  * to the Linux Foundation.
  */
+
 /**
- * @file cdp_txrx_tx_throttle.h
- * @brief Define the host data path transmit throttle API
- * functions called by the host control SW and the OS interface
- * module
+ * @file htt_deps.h
+ *
+ * @details list other header files that contain the defs for data types,
+ *      constants, and compiler pragmas used in the HTT header files
  */
-#ifndef _CDP_TXRX_TX_THROTTLE_H_
-#define _CDP_TXRX_TX_THROTTLE_H_
 
-#if defined(QCA_SUPPORT_TX_THROTTLE)
-void ol_tx_throttle_init_period(struct ol_txrx_pdev_t *pdev, int period,
-				uint8_t *dutycycle_level);
+#ifndef _HTT_DEPS_H_
+#define _HTT_DEPS_H_
 
-void ol_tx_throttle_set_level(struct ol_txrx_pdev_t *pdev, int level);
-#else
-static inline void ol_tx_throttle_set_level(struct ol_txrx_pdev_t *pdev,
-					    int level)
-{
-	/* no-op */
-}
-
-static inline void ol_tx_throttle_init_period(struct ol_txrx_pdev_t *pdev,
-					      int period,
-					      uint8_t *dutycycle_level)
-{
-	/* no-op */
-}
+#include <a_types.h>    /* A_UINT32 */
+#include <a_osapi.h>    /* PREPACK, POSTPACK */
+#ifdef ATHR_WIN_NWF
+#pragma warning(disable:4214) /* bit field types other than int */
 #endif
-#endif /* _CDP_TXRX_TX_THROTTLE_H_ */
+#include "wlan_defs.h"
+
+#endif /* _HTT_DEPS_H_ */

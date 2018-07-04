@@ -45,6 +45,7 @@ static inline void ce_enable_irq_in_individual_register(struct hif_softc *scn,
 		int ce_id)
 {
 	uint32_t offset;
+
 	offset = HOST_IE_ADDRESS + CE_BASE_ADDRESS(ce_id);
 	if (!TARGET_REGISTER_ACCESS_ALLOW(scn)) {
 		HIF_ERROR("%s: target access is not allowed", __func__);
@@ -57,6 +58,7 @@ static inline void ce_disable_irq_in_individual_register(struct hif_softc *scn,
 		int ce_id)
 {
 	uint32_t offset;
+
 	offset = HOST_IE_ADDRESS + CE_BASE_ADDRESS(ce_id);
 	if (!TARGET_REGISTER_ACCESS_ALLOW(scn)) {
 		HIF_ERROR("%s: target access is not allowed", __func__);

@@ -17,39 +17,13 @@
  */
 
 /**
- * DOC: qdf_debugfs
- * This file provides QDF debug file system APIs
+ * DOC: i_qdf_threads
+ * Header file for linux-specific thead abstractions
  */
 
-#include <qdf_debugfs.h>
-#include <i_qdf_debugfs.h>
-#include <qdf_module.h>
+#if !defined(__I_QDF_THREADS_H)
+#define __I_QDF_THREADS_H
 
-/* entry for root debugfs directory*/
-static struct dentry *qdf_debugfs_root;
+typedef struct task_struct __qdf_thread_t;
 
-QDF_STATUS qdf_debugfs_init(void)
-{
-	qdf_debugfs_root = debugfs_create_dir(KBUILD_MODNAME"_qdf", NULL);
-
-	if (!qdf_debugfs_root)
-		return QDF_STATUS_E_FAILURE;
-
-	return QDF_STATUS_SUCCESS;
-}
-qdf_export_symbol(qdf_debugfs_init);
-
-QDF_STATUS qdf_debugfs_exit(void)
-{
-	debugfs_remove_recursive(qdf_debugfs_root);
-	qdf_debugfs_root = NULL;
-
-	return QDF_STATUS_SUCCESS;
-}
-qdf_export_symbol(qdf_debugfs_exit);
-
-struct dentry *qdf_debugfs_get_root(void)
-{
-	return qdf_debugfs_root;
-}
-
+#endif /* __I_QDF_THREADS_H */

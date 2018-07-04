@@ -259,6 +259,19 @@
 #define MAX_ASSOC_IE_LENGTH 1024
 typedef uint32_t TARGET_INIT_STATUS;
 
+/**
+ * @brief Opaque handle of wmi structure
+ */
+struct wmi_unified;
+typedef struct wmi_unified *wmi_unified_t;
+
+typedef void *ol_scn_t;
+/**
+ * @wmi_event_handler function prototype
+ */
+typedef int (*wmi_unified_event_handler)(ol_scn_t scn_handle,
+		 uint8_t *event_buf, uint32_t len);
+
 typedef enum {
 	WMI_HOST_MODE_11A	= 0,   /* 11a Mode */
 	WMI_HOST_MODE_11G	= 1,   /* 11b/g Mode */
@@ -474,6 +487,7 @@ struct vdev_start_params {
 	uint8_t disable_hw_ack;
 	struct channel_param channel;
 #endif
+	bool ldpc_rx_enabled;
 };
 
 /**
@@ -956,16 +970,6 @@ struct ap_ps_params {
 	uint32_t value;
 };
 
-/**
- * struct vendor_oui - probe request ie vendor oui information
- * @oui_type: type of the vendor oui (3 valid octets)
- * @oui_subtype: subtype of the vendor oui (1 valid octet)
- */
-struct vendor_oui {
-	uint32_t oui_type;
-	uint32_t oui_subtype;
-};
-
 #define WMI_HOST_SCAN_CHAN_FREQ_SHIFT	0
 #define WMI_HOST_SCAN_CHAN_FREQ_MASK	0xffff
 #define WMI_HOST_SCAN_CHAN_MODE_SHIFT	16
@@ -1074,6 +1078,7 @@ struct scan_start_params {
 	uint32_t num_vendor_oui;
 	uint32_t oui_field_len;
 	uint8_t *voui;
+	uint32_t scan_ctrl_flags_ext;
 };
 
 /**
@@ -1801,6 +1806,35 @@ typedef struct {
 	uint32_t mcsset[WMI_HOST_ROAM_OFFLOAD_NUM_MCS_SET >> 2];
 } roam_offload_param;
 
+#define WMI_FILS_MAX_RRK_LENGTH 64
+#define WMI_FILS_MAX_RIK_LENGTH WMI_FILS_MAX_RRK_LENGTH
+#define WMI_FILS_MAX_REALM_LENGTH 256
+#define WMI_FILS_MAX_USERNAME_LENGTH 16
+
+/**
+ * struct roam_fils_params - Roam FILS params
+ * @username: username
+ * @username_length: username length
+ * @next_erp_seq_num: next ERP sequence number
+ * @rrk: RRK
+ * @rrk_length: length of @rrk
+ * @rik: RIK
+ * @rik_length: length of @rik
+ * @realm: realm
+ * @realm_len: length of @realm
+ */
+struct roam_fils_params {
+	uint8_t username[WMI_FILS_MAX_USERNAME_LENGTH];
+	uint32_t username_length;
+	uint32_t next_erp_seq_num;
+	uint8_t rrk[WMI_FILS_MAX_RRK_LENGTH];
+	uint32_t rrk_length;
+	uint8_t rik[WMI_FILS_MAX_RIK_LENGTH];
+	uint32_t rik_length;
+	uint8_t realm[WMI_FILS_MAX_REALM_LENGTH];
+	uint32_t realm_len;
+};
+
 /* struct roam_offload_scan_params - structure
  *     containing roaming offload scan parameters
  * @is_roam_req_valid: flag to tell whether roam req
@@ -1825,6 +1859,10 @@ typedef struct {
  * @is_ese_assoc: flag to determine ese assoc
  * @mdid: mobility domain info
  * @roam_offload_params: roam offload tlv params
+ * @assoc_ie_length: Assoc IE length
+ * @assoc_ie: Assoc IE buffer
+ * @add_fils_tlv: add FILS TLV boolean
+ * @roam_fils_params: roam fils params
  */
 struct roam_offload_scan_params {
 	uint8_t is_roam_req_valid;
@@ -1857,6 +1895,10 @@ struct roam_offload_scan_params {
 #endif
 	uint32_t assoc_ie_length;
 	uint8_t  assoc_ie[MAX_ASSOC_IE_LENGTH];
+	bool add_fils_tlv;
+#ifdef WLAN_FEATURE_FILS_SK
+	struct roam_fils_params roam_fils_params;
+#endif
 };
 
 /* struct roam_offload_scan_rssi_params - structure containing
@@ -1884,6 +1926,12 @@ struct roam_offload_scan_params {
  * @dense_min_aps_cnt: dense roam minimum APs
  * @initial_dense_status: dense status detected by host
  * @traffic_threshold: dense roam RSSI threshold
+ * @bg_scan_bad_rssi_thresh: Bad RSSI threshold to perform bg scan
+ * @roam_bad_rssi_thresh_offset_2g: Offset from Bad RSSI threshold for 2G to 5G Roam
+ * @bg_scan_client_bitmap: Bitmap used to identify the client scans to snoop
+ * @flags: Flags for Background Roaming
+ *	Bit 0 : BG roaming enabled when we connect to 2G AP only and roaming to 5G AP only.
+ *	Bit 1-31: Reserved
  */
 struct roam_offload_scan_rssi_params {
 	int8_t rssi_thresh;
@@ -1906,6 +1954,171 @@ struct roam_offload_scan_rssi_params {
 	int dense_min_aps_cnt;
 	int initial_dense_status;
 	int traffic_threshold;
+	int8_t bg_scan_bad_rssi_thresh;
+	uint8_t roam_bad_rssi_thresh_offset_2g;
+	uint32_t bg_scan_client_bitmap;
+	int32_t rssi_thresh_offset_5g;
+	uint32_t flags;
+};
+
+/**
+ * struct ap_profile - Structure ap profile to match candidate
+ * @flags: flags
+ * @rssi_threshold: the value of the the candidate AP should higher by this
+ *                  threshold than the rssi of the currrently associated AP
+ * @ssid: ssid vlaue to be matched
+ * @rsn_authmode: security params to be matched
+ * @rsn_ucastcipherset: unicast cipher set
+ * @rsn_mcastcipherset: mcast/group cipher set
+ * @rsn_mcastmgmtcipherset: mcast/group management frames cipher set
+ * @rssi_abs_thresh: the value of the candidate AP should higher than this
+ *                   absolute RSSI threshold. Zero means no absolute minimum
+ *                   RSSI is required. units are the offset from the noise
+ *                   floor in dB
+ */
+struct ap_profile {
+	uint32_t flags;
+	uint32_t rssi_threshold;
+	struct mac_ssid  ssid;
+	uint32_t rsn_authmode;
+	uint32_t rsn_ucastcipherset;
+	uint32_t rsn_mcastcipherset;
+	uint32_t rsn_mcastmgmtcipherset;
+	uint32_t rssi_abs_thresh;
+};
+
+/**
+ * struct rssi_scoring - rssi scoring param to sortlist selected AP
+ * @best_rssi_threshold: Roamable AP RSSI equal or better than this threshold,
+ *                      full rssi score 100. Units in dBm.
+ * @good_rssi_threshold: Below threshold, scoring linear percentage between
+ *                      rssi_good_pnt and 100. Units in dBm.
+ * @bad_rssi_threshold: Between good and bad rssi threshold, scoring linear
+ *                      % between rssi_bad_pcnt and rssi_good_pct in dBm.
+ * @good_rssi_pcnt: Used to assigned scoring percentage of each slot between
+ *                 best to good rssi threshold. Units in percentage.
+ * @bad_rssi_pcnt: Used to assigned scoring percentage of each slot between good
+ *                to bad rssi threshold. Unites in percentage.
+ * @good_bucket_size : bucket size of slot in good zone
+ * @bad_bucket_size : bucket size of slot in bad zone
+ * @rssi_pref_5g_rssi_thresh: Below rssi threshold, 5G AP have given preference
+ *                           of band percentage. Units in dBm.
+ */
+struct rssi_scoring {
+	int32_t best_rssi_threshold;
+	int32_t good_rssi_threshold;
+	int32_t  bad_rssi_threshold;
+	uint32_t good_rssi_pcnt;
+	uint32_t bad_rssi_pcnt;
+	uint32_t good_bucket_size;
+	uint32_t bad_bucket_size;
+	int32_t  rssi_pref_5g_rssi_thresh;
+};
+
+/**
+ * struct param_slot_scoring - define % score for differents slots for a
+ *                             scoring param.
+ * @num_slot: number of slots in which the param will be divided.
+ *           Max 15. index 0 is used for 'not_present. Num_slot will
+ *           equally divide 100. e.g, if num_slot = 4 slot 0 = 0-25%, slot
+ *           1 = 26-50% slot 2 = 51-75%, slot 3 = 76-100%
+ * @score_pcnt3_to_0: Conatins score percentage for slot 0-3
+ *             BITS 0-7   :- the scoring pcnt when not present
+ *             BITS 8-15  :- SLOT_1
+ *             BITS 16-23 :- SLOT_2
+ *             BITS 24-31 :- SLOT_3
+ * @score_pcnt7_to_4: Conatins score percentage for slot 4-7
+ *             BITS 0-7   :- SLOT_4
+ *             BITS 8-15  :- SLOT_5
+ *             BITS 16-23 :- SLOT_6
+ *             BITS 24-31 :- SLOT_7
+ * @score_pcnt11_to_8: Conatins score percentage for slot 8-11
+ *             BITS 0-7   :- SLOT_8
+ *             BITS 8-15  :- SLOT_9
+ *             BITS 16-23 :- SLOT_10
+ *             BITS 24-31 :- SLOT_11
+ * @score_pcnt15_to_12: Conatins score percentage for slot 12-15
+ *             BITS 0-7   :- SLOT_12
+ *             BITS 8-15  :- SLOT_13
+ *             BITS 16-23 :- SLOT_14
+ *             BITS 24-31 :- SLOT_15
+ */
+struct param_slot_scoring {
+	uint32_t num_slot;
+	uint32_t score_pcnt3_to_0;
+	uint32_t score_pcnt7_to_4;
+	uint32_t score_pcnt11_to_8;
+	uint32_t score_pcnt15_to_12;
+};
+
+/**
+ * struct scoring_param - scoring param to sortlist selected AP
+ * @disable_bitmap: Each bit will be either allow(0)/disallow(1) to
+ *                 considered the roam score param.
+ * @rssi_weightage: RSSI weightage out of total score in %
+ * @ht_weightage: HT weightage out of total score in %.
+ * @vht_weightage: VHT weightage out of total score in %.
+ * @he_weightaget: 11ax weightage out of total score in %.
+ * @bw_weightage: Bandwidth weightage out of total score in %.
+ * @band_weightage: Band(2G/5G) weightage out of total score in %.
+ * @nss_weightage: NSS(1x1 / 2x2)weightage out of total score in %.
+ * @esp_qbss_weightage: ESP/QBSS weightage out of total score in %.
+ * @beamforming_weightage: Beamforming weightage out of total score in %.
+ * @pcl_weightage: PCL weightage out of total score in %.
+ * @oce_wan_weightage OCE WAN metrics weightage out of total score in %.
+ * @bw_index_score: channel BW scoring percentage information.
+ *                 BITS 0-7   :- It contains scoring percentage of 20MHz   BW
+ *                 BITS 8-15  :- It contains scoring percentage of 40MHz   BW
+ *                 BITS 16-23 :- It contains scoring percentage of 80MHz   BW
+ *                 BITS 24-31 :- It contains scoring percentage of 1600MHz BW
+ *                 The value of each index must be 0-100
+ * @band_index_score: band scording percentage information.
+ *                   BITS 0-7   :- It contains scoring percentage of 2G
+ *                   BITS 8-15  :- It contains scoring percentage of 5G
+ *                   BITS 16-23 :- reserved
+ *                   BITS 24-31 :- reserved
+ *                   The value of each index must be 0-100
+ * @nss_index_score: NSS scoring percentage information.
+ *                  BITS 0-7   :- It contains scoring percentage of 1x1
+ *                  BITS 8-15  :- It contains scoring percentage of 2x2
+ *                  BITS 16-23 :- It contains scoring percentage of 3x3
+ *                  BITS 24-31 :- It contains scoring percentage of 4x4
+ *                  The value of each index must be 0-100
+ * @rssi_scoring: RSSI scoring information.
+ * @esp_qbss_scoring: ESP/QBSS scoring percentage information
+ * @oce_wan_scoring: OCE WAN metrics percentage information
+*/
+struct scoring_param {
+	uint32_t disable_bitmap;
+	int32_t rssi_weightage;
+	int32_t ht_weightage;
+	int32_t vht_weightage;
+	int32_t he_weightage;
+	int32_t bw_weightage;
+	int32_t band_weightage;
+	int32_t nss_weightage;
+	int32_t esp_qbss_weightage;
+	int32_t beamforming_weightage;
+	int32_t pcl_weightage;
+	int32_t oce_wan_weightage;
+	uint32_t bw_index_score;
+	uint32_t band_index_score;
+	uint32_t nss_index_score;
+	struct rssi_scoring rssi_scoring;
+	struct param_slot_scoring esp_qbss_scoring;
+	struct param_slot_scoring oce_wan_scoring;
+};
+
+/**
+ * struct ap_profile_params - ap profile params
+ * @vdev_id: vdev id
+ * @profile: ap profile to match candidate
+ * @param: scoring params to short candidate
+ */
+struct ap_profile_params {
+	uint8_t vdev_id;
+	struct ap_profile profile;
+	struct scoring_param param;
 };
 
 /**
@@ -2129,6 +2342,17 @@ struct pno_nw_type {
 };
 
 /**
+ * struct connected_pno_band_rssi_pref - BSS preference based on band
+ * and RSSI
+ * @band: band preference
+ * @rssi_pref: RSSI preference
+ */
+struct cpno_band_rssi_pref {
+	int8_t band;
+	int8_t rssi;
+};
+
+/**
  * struct pno_scan_req_params - PNO Scan request structure
  * @enable: flag to enable or disable
  * @modePNO: PNO Mode
@@ -2140,6 +2364,7 @@ struct pno_nw_type {
  * @slow_scan_period: Slow scan period
  * @delay_start_time: delay in seconds to use before starting the first scan
  * @fast_scan_max_cycles: Fast scan max cycles
+ * @scan_backoff_multiplier: multiply fast scan period by this after max cycles
  * @us24GProbeTemplateLen: 2.4G probe template length
  * @p24GProbeTemplate: 2.4G probe template
  * @us5GProbeTemplateLen: 5G probe template length
@@ -2156,11 +2381,20 @@ struct pno_nw_type {
  * @mac_addr_mask: MAC address mask used with randomization, bits that
  *	are 0 in the mask should be randomized, bits that are 1 should
  *	be taken from the @mac_addr
+ * @relative_rssi_set: Flag to check whether realtive_rssi is set or not
+ * @relative_rssi: Relative rssi threshold, used for connected pno
+ * @band_rssi_pref: Band and RSSI preference that can be given to one BSS
+ *	over the other BSS
  * @ie_whitelist: set to true for enabling ie whitelisting
  * @probe_req_ie_bitmap: contains IEs to be included in probe req
  * @num_vendor_oui: number of vendor OUIs
  * @oui_field_len: size of total number of OUIs
  * @voui: pointer to OUI buffer
+ *
+ * E.g.
+ *	{ fast_scan_period=120, fast_scan_max_cycles=2,
+ *	  slow_scan_period=1800, scan_backoff_multiplier=2 }
+ *	Result: 120s x2, 240s x2, 480s x2, 960s x2, 1800s xN
  */
 struct pno_scan_req_params {
 	uint8_t enable;
@@ -2173,6 +2407,7 @@ struct pno_scan_req_params {
 	uint32_t slow_scan_period;
 	uint32_t delay_start_time;
 	uint8_t fast_scan_max_cycles;
+	uint8_t scan_backoff_multiplier;
 	uint32_t        active_min_time;
 	uint32_t        active_max_time;
 	uint32_t        passive_min_time;
@@ -2192,6 +2427,10 @@ struct pno_scan_req_params {
 	bool enable_pno_scan_randomization;
 	uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
 	uint8_t mac_addr_mask[QDF_MAC_ADDR_SIZE];
+
+	bool relative_rssi_set;
+	int8_t relative_rssi;
+	struct cpno_band_rssi_pref band_rssi_pref;
 
 	/* probe req ie whitelisting attrs */
 	bool ie_whitelist;
@@ -2378,7 +2617,7 @@ struct plm_req_params {
 #define MAX_SSID_ALLOWED_LIST    4
 #define MAX_BSSID_AVOID_LIST     16
 #define MAX_BSSID_FAVORED      16
-
+#define MAX_RSSI_AVOID_BSSID_LIST 10
 
 /**
  * struct mac_ts_info_tfc - mac ts info parameters
@@ -3072,16 +3311,18 @@ struct periodic_tx_pattern {
 	uint8_t ucPattern[WMI_PERIODIC_TX_PTRN_MAX_SIZE];
 };
 
-#define WMI_GTK_OFFLOAD_KEK_BYTES       16
-#define WMI_GTK_OFFLOAD_KCK_BYTES       16
-#define WMI_GTK_OFFLOAD_ENABLE          0
-#define WMI_GTK_OFFLOAD_DISABLE         1
+#define WMI_GTK_OFFLOAD_KEK_BYTES_LEGACY 16
+#define WMI_GTK_OFFLOAD_KEK_BYTES        64
+#define WMI_GTK_OFFLOAD_KCK_BYTES        16
+#define WMI_GTK_OFFLOAD_ENABLE            0
+#define WMI_GTK_OFFLOAD_DISABLE           1
 
 /**
  * struct gtk_offload_params - gtk offload parameters
  * @ulFlags: optional flags
  * @aKCK: Key confirmation key
  * @aKEK: key encryption key
+ * @kek_len: Kek length
  * @ullKeyReplayCounter: replay counter
  * @bssid: bss id
  */
@@ -3089,8 +3330,21 @@ struct gtk_offload_params {
 	uint32_t ulFlags;
 	uint8_t aKCK[WMI_GTK_OFFLOAD_KCK_BYTES];
 	uint8_t aKEK[WMI_GTK_OFFLOAD_KEK_BYTES];
+	uint32_t kek_len;
 	uint64_t ullKeyReplayCounter;
 	struct qdf_mac_addr bssid;
+};
+
+/**
+ * struct mcast_filter_params - mcast filter parameters
+ * @multicast_addr_cnt: num of addresses
+ * @multicast_addr: address array
+ * @action: operation to perform
+ */
+struct mcast_filter_params {
+	uint32_t multicast_addr_cnt;
+	struct qdf_mac_addr multicast_addr[WMI_MAX_NUM_MULTICAST_ADDRESS];
+	uint8_t action;
 };
 
 /**
@@ -3316,6 +3570,19 @@ struct ssid_hotlist_param {
 };
 
 /**
+ * struct rssi_disallow_bssid - Structure holding Rssi based avoid candidate
+ * @bssid: BSSID of the AP
+ * @remaining_duration: remaining disallow duration in ms
+ * @expected_rssi: RSSI at which STA can initate in dBm
+ */
+struct rssi_disallow_bssid {
+	struct qdf_mac_addr bssid;
+	uint32_t remaining_duration;
+	int8_t expected_rssi;
+};
+
+
+/**
  * struct roam_scan_filter_params - Structure holding roaming scan
  *                                  parameters
  * @op_bitmap:                bitmap to determine reason of roaming
@@ -3360,6 +3627,21 @@ struct roam_scan_filter_params {
 	uint32_t disallow_duration;
 	uint32_t rssi_channel_penalization;
 	uint32_t num_disallowed_aps;
+	uint32_t num_rssi_rejection_ap;
+	struct rssi_disallow_bssid rssi_rejection_ap[MAX_RSSI_AVOID_BSSID_LIST];
+};
+
+#define WMI_MAX_HLP_IE_LEN 2048
+/**
+ * struct hlp_params - HLP info params
+ * @vdev_id: vdev id
+ * @hlp_ie_len: HLP IE length
+ * @hlp_ie: HLP IE
+ */
+struct hlp_params {
+	uint8_t vdev_id;
+	uint32_t  hlp_ie_len;
+	uint8_t hlp_ie[WMI_MAX_HLP_IE_LEN];
 };
 
 /**
@@ -3400,6 +3682,7 @@ struct wmi_unit_test_cmd {
  * @channel: channel
  * @frame_len: frame length, includs mac header, fixed params and ies
  * @frame_buf: buffer contaning probe response or beacon
+ * @is_same_bssid: flag to indicate if roaming is requested for same bssid
  */
 struct wmi_roam_invoke_cmd {
 	uint32_t vdev_id;
@@ -3407,6 +3690,7 @@ struct wmi_roam_invoke_cmd {
 	uint32_t channel;
 	uint32_t frame_len;
 	uint8_t *frame_buf;
+	uint8_t is_same_bssid;
 };
 
 /**
@@ -6746,6 +7030,8 @@ struct wmi_adaptive_dwelltime_params {
  *     for PER based roam in tx path
  * @rx_per_mon_time: Minimum time required to be considered as valid scenario
  *     for PER based roam in rx path
+ * @min_candidate_rssi: Minimum RSSI threshold for candidate AP to be used for
+ *     PER based roaming
  */
 struct wmi_per_roam_config {
 	uint32_t enable;
@@ -6912,11 +7198,13 @@ struct rcpi_req {
  * @operation: 0 reset to fw default, 1 set the bits,
  *    2 add the setting bits, 3 delete the setting bits
  * @action_category_map: bit mapping.
+ * @action_per_category: action id bitmask per category
  */
 struct action_wakeup_set_param {
 	uint32_t vdev_id;
 	uint32_t operation;
 	uint32_t action_category_map[WMI_SUPPORTED_ACTION_CATEGORY_ELE_LIST];
+	uint32_t action_per_category[WMI_SUPPORTED_ACTION_CATEGORY];
 };
 
 /*
@@ -7061,7 +7349,7 @@ struct wmi_action_oui {
 
 /**
  * struct set_arp_stats - set/reset arp stats
- * @vdev_id: vdev_id
+ * @vdev_id: session id
  * @flag: enable/disable stats
  * @pkt_type: type of packet(1 - arp)
  * @ip_addr: subnet ipv4 address in case of encrypted packets
@@ -7076,12 +7364,45 @@ struct set_arp_stats {
 /**
  * struct get_arp_stats - get arp stats from firmware
  * @pkt_type: packet type(1 - ARP)
- * @vdev_id: vdev_id
+ * @vdev_id: session id
  */
 struct get_arp_stats {
 	uint8_t pkt_type;
 	uint32_t vdev_id;
 };
 
+#define WMI_SCAN_CLIENT_MAX        7
+
+/**
+ * struct wmi_dbs_scan_sel_params - DBS scan selection params
+ * @num_clients: Number of scan clients dutycycle
+ * @pdev_id: pdev_id for identifying the MAC
+ * @module_id: scan client module id
+ * @num_dbs_scans: number of DBS scans
+ * @num_non_dbs_scans: number of non-DBS scans
+ */
+struct wmi_dbs_scan_sel_params {
+	uint32_t num_clients;
+	uint32_t pdev_id;
+	uint32_t module_id[WMI_SCAN_CLIENT_MAX];
+	uint32_t num_dbs_scans[WMI_SCAN_CLIENT_MAX];
+	uint32_t num_non_dbs_scans[WMI_SCAN_CLIENT_MAX];
+};
+
+/**
+ * struct wmi_limit_off_chan_param - limit off channel parameters
+ * @vdev_id: vdev id
+ * @status: status of the command (enable/disable)
+ * @max_offchan_time: max off channel time
+ * @rest_time: home channel time
+ * @skip_dfs_chans: skip dfs channels during scan
+ */
+struct wmi_limit_off_chan_param {
+	uint32_t vdev_id;
+	bool status;
+	uint32_t max_offchan_time;
+	uint32_t rest_time;
+	bool skip_dfs_chans;
+};
 #endif /* _WMI_UNIFIED_PARAM_H_ */
 
