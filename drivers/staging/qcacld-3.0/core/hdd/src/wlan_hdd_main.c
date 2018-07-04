@@ -11343,7 +11343,6 @@ out:
 	hdd_deinit();
 err_hdd_init:
 	pld_deinit();
-err_dev_state:
 	return ret;
 }
 
